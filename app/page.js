@@ -16,12 +16,25 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [viewMode, setViewMode] = useState("formatted"); // "formatted" | "raw_json"
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [geminiPromptText, setGeminiPromptText] = useState("");
 
   // Test form state
   const [testCode, setTestCode] = useState("NOD_UP");
   const [testValue, setTestValue] = useState("30");
   const [sendResult, setSendResult] = useState(null);
   const [sending, setSending] = useState(false);
+
+  // New Code Form state
+  const [showAddCode, setShowAddCode] = useState(false);
+  const [newCodeName, setNewCodeName] = useState("");
+  const [newCodeMeaning, setNewCodeMeaning] = useState("");
+  const [newCodeValue, setNewCodeValue] = useState("");
+  const [newCodeHardware, setNewCodeHardware] = useState("ESP32 #1");
+  const [newCodeDesc, setNewCodeDesc] = useState("");
+  const [codeSaving, setCodeSaving] = useState(false);
+  const [codeFeedback, setCodeFeedback] = useState(null);
 
   // Fetch full DB data
   const fetchDb = async () => {
@@ -39,8 +52,22 @@ export default function Home() {
     }
   };
 
+  // Fetch gemini prompt text
+  const fetchPromptText = async () => {
+    try {
+      const res = await fetch("/gemini", { cache: "no-store" });
+      if (res.ok) {
+        const txt = await res.text();
+        setGeminiPromptText(txt);
+      }
+    } catch (e) {
+      console.error("Failed to fetch prompt text:", e);
+    }
+  };
+
   useEffect(() => {
     fetchDb();
+    fetchPromptText();
   }, []);
 
   // Auto-refresh interval
@@ -68,7 +95,6 @@ export default function Home() {
         status: res.status,
         response: result,
       });
-      // Refresh DB immediately
       await fetchDb();
     } catch (err) {
       setSendResult({
@@ -79,6 +105,81 @@ export default function Home() {
     } finally {
       setSending(false);
     }
+  };
+
+  // Add / Save Code
+  const handleSaveCode = async (e) => {
+    e?.preventDefault();
+    if (!newCodeName.trim()) return;
+    setCodeSaving(true);
+    setCodeFeedback(null);
+
+    const payload = {
+      action: "add_code",
+      code: {
+        code: newCodeName.toUpperCase().trim(),
+        meaning: newCodeMeaning.trim(),
+        example_value: newCodeValue.trim() || "0",
+        hardware: newCodeHardware.trim(),
+        description: newCodeDesc.trim(),
+      },
+    };
+
+    try {
+      const res = await fetch("/api/bio_data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCodeFeedback(`✓ Saved code '${payload.code.code}'`);
+        setNewCodeName("");
+        setNewCodeMeaning("");
+        setNewCodeValue("");
+        setNewCodeDesc("");
+        setShowAddCode(false);
+        await fetchDb();
+        await fetchPromptText();
+      } else {
+        setCodeFeedback(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setCodeFeedback(`Error: ${err.message}`);
+    } finally {
+      setCodeSaving(false);
+    }
+  };
+
+  // Delete Code
+  const handleDeleteCode = async (codeName) => {
+    if (!confirm(`Delete code '${codeName}' from bio_data?`)) return;
+    try {
+      const res = await fetch("/api/bio_data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_code", code: codeName }),
+      });
+      if (res.ok) {
+        await fetchDb();
+        await fetchPromptText();
+      }
+    } catch (err) {
+      console.error("Failed to delete code:", err);
+    }
+  };
+
+  // Copy Gemini Prompt
+  const handleCopyPrompt = async () => {
+    let txt = geminiPromptText;
+    if (!txt) {
+      const res = await fetch("/gemini");
+      txt = await res.text();
+      setGeminiPromptText(txt);
+    }
+    await navigator.clipboard.writeText(txt);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 3000);
   };
 
   // Simulate Pi acknowledging an instruction
@@ -113,7 +214,7 @@ export default function Home() {
         style={{
           borderBottom: "1px solid var(--border-color)",
           paddingBottom: "16px",
-          marginBottom: "20px",
+          marginBottom: "16px",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -126,7 +227,7 @@ export default function Home() {
             [ROBOT BRIDGE DATABASE]
           </h1>
           <p style={{ color: "var(--text-dim)", fontSize: "12px", marginTop: "4px" }}>
-            Realtime DB Bridge between Gemini Live and Raspberry Pi Controller
+            Cloud Database Bridge between Gemini Live and Raspberry Pi Hardware Controller
           </p>
         </div>
 
@@ -188,39 +289,154 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Direct API Endpoints Quickbar */}
+      {/* GEMINI INITIAL PROMPT BANNER */}
+      <section
+        style={{
+          background: "linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%)",
+          border: "1px solid rgba(6, 182, 212, 0.3)",
+          borderRadius: "6px",
+          padding: "16px 20px",
+          marginBottom: "20px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "14px",
+        }}
+      >
+        <div style={{ maxWidth: "780px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+            <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--accent-cyan)" }}>
+              ★ INITIAL GEMINI LINK & SYSTEM PROMPT
+            </span>
+            <span
+              style={{
+                fontSize: "10px",
+                background: "#0369a1",
+                color: "#e0f2fe",
+                padding: "1px 6px",
+                borderRadius: "3px",
+              }}
+            >
+              READY FOR GEMINI
+            </span>
+          </div>
+          <p style={{ color: "#cbd5e1", fontSize: "12px", lineHeight: "1.4" }}>
+            Feed this link to Gemini as your very first message, or copy the direct prompt text:
+            <br />
+            Direct URL:{" "}
+            <a
+              href="/gemini"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#38bdf8", fontWeight: "600", textDecoration: "underline" }}
+            >
+              https://robocode-kappa.vercel.app/gemini
+            </a>
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            onClick={handleCopyPrompt}
+            style={{
+              background: copiedPrompt ? "var(--accent-green)" : "var(--accent-cyan)",
+              color: "#000",
+              fontWeight: "700",
+              border: "none",
+              padding: "8px 16px",
+              borderRadius: "4px",
+              fontSize: "12px",
+              boxShadow: "0 2px 8px rgba(6, 182, 212, 0.25)",
+            }}
+          >
+            {copiedPrompt ? "✓ Copied to Clipboard!" : "📋 Copy Initial Prompt for Gemini"}
+          </button>
+
+          <button
+            onClick={() => setShowPromptPreview(!showPromptPreview)}
+            style={{
+              background: "#1e293b",
+              color: "#94a3b8",
+              border: "1px solid #334155",
+              padding: "8px 12px",
+              borderRadius: "4px",
+              fontSize: "12px",
+            }}
+          >
+            {showPromptPreview ? "Hide Preview" : "Preview Prompt"}
+          </button>
+        </div>
+      </section>
+
+      {/* Prompt Preview Accordion */}
+      {showPromptPreview && (
+        <section
+          style={{
+            background: "#080c10",
+            border: "1px solid #1e293b",
+            borderRadius: "6px",
+            padding: "16px",
+            marginBottom: "20px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+            <span style={{ color: "var(--accent-amber)", fontSize: "11px", textTransform: "uppercase" }}>
+              [PREVIEW: Raw Output of /gemini Endpoint]
+            </span>
+            <a href="/gemini" target="_blank" style={{ fontSize: "11px", color: "var(--accent-cyan)" }}>
+              Open raw link ↗
+            </a>
+          </div>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontSize: "12px",
+              color: "#93c5fd",
+              maxHeight: "350px",
+              overflowY: "auto",
+              lineHeight: "1.45",
+            }}
+          >
+            {geminiPromptText || "Loading prompt..."}
+          </pre>
+        </section>
+      )}
+
+      {/* API Quickbar */}
       <section
         style={{
           background: "var(--panel-bg)",
           border: "1px solid var(--border-color)",
           borderRadius: "6px",
-          padding: "12px 16px",
+          padding: "10px 16px",
           marginBottom: "20px",
           display: "flex",
           alignItems: "center",
-          gap: "16px",
+          gap: "14px",
           flexWrap: "wrap",
           fontSize: "12px",
         }}
       >
-        <span style={{ color: "var(--text-dim)" }}>API Endpoints:</span>
+        <span style={{ color: "var(--text-dim)" }}>Quick Links:</span>
+        <a href="/gemini" target="_blank" rel="noopener noreferrer">
+          <code>GET /gemini</code>
+        </a>
         <a href="/bio_data" target="_blank" rel="noopener noreferrer">
           <code>GET /bio_data</code>
         </a>
-        <a href="/bio_data?format=text" target="_blank" rel="noopener noreferrer">
-          <code>GET /bio_data?format=text</code>
-        </a>
         <a href="/instruct?code=NOD_UP&value=30" target="_blank" rel="noopener noreferrer">
-          <code>GET /instruct?code=...&value=...</code>
+          <code>GET /instruct?code=...</code>
         </a>
         <a href="/pi_instructions" target="_blank" rel="noopener noreferrer">
           <code>GET /pi_instructions</code>
         </a>
         <a href="/raw" target="_blank" rel="noopener noreferrer">
-          <code>GET /raw (Full DB Text)</code>
+          <code>GET /raw</code>
         </a>
         <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "11px" }}>
-          Last updated: {lastUpdated || "loading..."}
+          Last refreshed: {lastUpdated || "loading..."}
         </span>
       </section>
 
@@ -509,6 +725,8 @@ export default function Home() {
                 borderBottom: "1px solid var(--border-color)",
                 paddingBottom: "12px",
                 marginBottom: "16px",
+                flexWrap: "wrap",
+                gap: "8px",
               }}
             >
               <div>
@@ -520,20 +738,152 @@ export default function Home() {
                 </p>
               </div>
 
-              <button
-                onClick={() => navigator.clipboard.writeText(JSON.stringify(bio, null, 2))}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setShowAddCode(!showAddCode)}
+                  style={{
+                    background: showAddCode ? "#1e293b" : "#064e3b",
+                    color: showAddCode ? "#94a3b8" : "#6ee7b7",
+                    border: "1px solid var(--border-color)",
+                    padding: "4px 10px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
+                >
+                  {showAddCode ? "Close Form" : "+ Add / Edit Code"}
+                </button>
+
+                <button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(bio, null, 2))}
+                  style={{
+                    background: "#1f2937",
+                    color: "#e5e7eb",
+                    border: "1px solid var(--border-color)",
+                    padding: "4px 8px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                  }}
+                >
+                  Copy bio_data
+                </button>
+              </div>
+            </div>
+
+            {/* ADD CODE FORM MODAL / DRAWER */}
+            {showAddCode && (
+              <form
+                onSubmit={handleSaveCode}
                 style={{
-                  background: "#1f2937",
-                  color: "#e5e7eb",
-                  border: "1px solid var(--border-color)",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  fontSize: "11px",
+                  background: "#080c10",
+                  border: "1px solid var(--accent-cyan)",
+                  borderRadius: "6px",
+                  padding: "16px",
+                  marginBottom: "20px",
                 }}
               >
-                Copy bio_data
-              </button>
-            </div>
+                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "12px" }}>
+                  [ADD OR UPDATE ACTION CODE]
+                </h3>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gap: "12px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <div>
+                    <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "4px" }}>
+                      Code Name (e.g. NOD_UP, TILT_LEFT):
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeName}
+                      onChange={(e) => setNewCodeName(e.target.value.toUpperCase())}
+                      placeholder="e.g. TILT_HEAD"
+                      style={{ width: "100%" }}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "4px" }}>
+                      Physical Meaning:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeMeaning}
+                      onChange={(e) => setNewCodeMeaning(e.target.value)}
+                      placeholder="e.g. Tilt head sideways"
+                      style={{ width: "100%" }}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "4px" }}>
+                      Recommended Value:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeValue}
+                      onChange={(e) => setNewCodeValue(e.target.value)}
+                      placeholder="e.g. 20"
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "4px" }}>
+                      Target Hardware:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCodeHardware}
+                      onChange={(e) => setNewCodeHardware(e.target.value)}
+                      placeholder="e.g. ESP32 #1, Motor 1"
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "4px" }}>
+                    Description for Gemini (when and why to use it):
+                  </label>
+                  <input
+                    type="text"
+                    value={newCodeDesc}
+                    onChange={(e) => setNewCodeDesc(e.target.value)}
+                    placeholder="e.g. Tilts the head sideways to express curiosity"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    type="submit"
+                    disabled={codeSaving}
+                    style={{
+                      background: "var(--accent-green)",
+                      color: "#000",
+                      fontWeight: "700",
+                      border: "none",
+                      padding: "6px 14px",
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {codeSaving ? "Saving..." : "Save Code to Database"}
+                  </button>
+
+                  {codeFeedback && (
+                    <span style={{ fontSize: "12px", color: "var(--accent-green)" }}>{codeFeedback}</span>
+                  )}
+                </div>
+              </form>
+            )}
 
             {/* Sub-grid for Personality and Context */}
             <div
@@ -619,9 +969,14 @@ export default function Home() {
 
             {/* Allowed Codes & Meaning Table */}
             <div style={{ marginBottom: "20px" }}>
-              <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "10px" }}>
-                [ALLOWED CODES & HARDWARE MEANINGS] ({codesList.length} defined codes)
-              </h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)" }}>
+                  [ALLOWED CODES & HARDWARE MEANINGS] ({codesList.length} defined codes)
+                </h3>
+                <span style={{ fontSize: "11px", color: "var(--text-dim)" }}>
+                  Click "+ Add / Edit Code" above to modify
+                </span>
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
                   <thead>
@@ -631,6 +986,7 @@ export default function Home() {
                       <th style={{ padding: "6px 8px" }}>HARDWARE MAPPING</th>
                       <th style={{ padding: "6px 8px" }}>EXAMPLE VALUE</th>
                       <th style={{ padding: "6px 8px" }}>DESCRIPTION</th>
+                      <th style={{ padding: "6px 8px" }}>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -645,6 +1001,21 @@ export default function Home() {
                           <code>{c.example_value}</code>
                         </td>
                         <td style={{ padding: "8px", color: "#9ca3af", fontSize: "11px" }}>{c.description}</td>
+                        <td style={{ padding: "8px" }}>
+                          <button
+                            onClick={() => handleDeleteCode(c.code)}
+                            title="Delete code"
+                            style={{
+                              background: "transparent",
+                              color: "var(--accent-red)",
+                              border: "none",
+                              fontSize: "11px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -718,7 +1089,7 @@ export default function Home() {
           Nova Humanoid Companion Bridge &bull; Ready for Vercel Deployment &bull; Realtime DB Integration
         </div>
         <div>
-          Hosting: Vercel &bull; Protocol: HTTP GET / REST
+          Gemini Endpoint: <a href="/gemini" target="_blank" style={{ color: "var(--accent-cyan)" }}>/gemini</a>
         </div>
       </footer>
     </main>

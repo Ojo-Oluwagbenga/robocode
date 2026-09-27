@@ -18,6 +18,10 @@ const nextConfig = {
         source: "/raw",
         destination: "/api/db?format=text",
       },
+      {
+        source: "/prompt",
+        destination: "/gemini",
+      },
     ];
   },
 };

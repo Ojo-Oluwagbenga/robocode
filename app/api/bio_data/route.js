@@ -22,7 +22,6 @@ export async function GET(request) {
   const bio = await getBioData();
 
   if (format === "text") {
-    // Generate clean text representation for Gemini or console readers
     const textOutput = [
       "============================================================",
       "             ROBOT SPECIFICATION & BIO DATA                 ",
@@ -71,12 +70,80 @@ export async function GET(request) {
 
 /**
  * POST /api/bio_data
- * Update bio_data in database.
+ * Flexible update handler:
+ * - { action: "add_code", code: { code, meaning, ... } }
+ * - { action: "delete_code", code: "CODE_NAME" }
+ * - { codes: [...] }
+ * - Full bio_data object
  */
 export async function POST(request) {
   try {
-    const updatedBio = await request.json();
-    const result = await setBioData(updatedBio);
+    const body = await request.json();
+    const currentBio = await getBioData();
+
+    if (body.action === "add_code" && body.code) {
+      const newEntry = {
+        code: (body.code.code || "").toUpperCase().trim(),
+        meaning: body.code.meaning || "",
+        example_value: body.code.example_value || "0",
+        description: body.code.description || "",
+        hardware: body.code.hardware || "ESP32",
+      };
+
+      if (!newEntry.code) {
+        return NextResponse.json({ success: false, error: "Code name is required" }, { status: 400 });
+      }
+
+      let codes = Array.isArray(currentBio.codes) ? [...currentBio.codes] : [];
+      // Replace existing code if it exists, otherwise append
+      const existingIdx = codes.findIndex((c) => c.code === newEntry.code);
+      if (existingIdx >= 0) {
+        codes[existingIdx] = newEntry;
+      } else {
+        codes.push(newEntry);
+      }
+      currentBio.codes = codes;
+      if (currentBio.gemini_instructions) {
+        currentBio.gemini_instructions.allowed_codes = codes.map((c) => c.code);
+      }
+
+      await setBioData(currentBio);
+      return NextResponse.json(
+        { success: true, message: `Code '${newEntry.code}' saved.`, bio_data: currentBio },
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
+    if (body.action === "delete_code" && body.code) {
+      const codeToDelete = (body.code || "").toUpperCase().trim();
+      let codes = Array.isArray(currentBio.codes) ? currentBio.codes : [];
+      codes = codes.filter((c) => c.code !== codeToDelete);
+      currentBio.codes = codes;
+      if (currentBio.gemini_instructions) {
+        currentBio.gemini_instructions.allowed_codes = codes.map((c) => c.code);
+      }
+
+      await setBioData(currentBio);
+      return NextResponse.json(
+        { success: true, message: `Code '${codeToDelete}' removed.`, bio_data: currentBio },
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
+    if (Array.isArray(body.codes)) {
+      currentBio.codes = body.codes;
+      if (currentBio.gemini_instructions) {
+        currentBio.gemini_instructions.allowed_codes = body.codes.map((c) => c.code);
+      }
+      await setBioData(currentBio);
+      return NextResponse.json(
+        { success: true, message: "Codes list updated.", bio_data: currentBio },
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
+    // Default: overwrite entire object
+    const result = await setBioData(body);
     return NextResponse.json(
       { success: true, message: "bio_data updated successfully", bio_data: result },
       { status: 200, headers: CORS_HEADERS }
