@@ -15,9 +15,12 @@ export async function OPTIONS() {
 /**
  * GET /gemini
  * Dedicated System Prompt & Instruction Directive for Gemini.
- * Formatted cleanly in Markdown / Plain text so Gemini reads it directly as its initial prompt.
+ * Compatible with Gemini web crawlers (returns clean HTML with text) and API callers (plain text).
  */
 export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const acceptHeader = request.headers.get("accept") || "";
+  const format = searchParams.get("format");
   const host = request.headers.get("host") || "robocode-kappa.vercel.app";
   const protocol = host.includes("localhost") ? "http" : "https";
   const baseUrl = `${protocol}://${host}`;
@@ -90,6 +93,38 @@ ${
 You are now live and connected to ${personality.name || "Nova"}'s physical body. Await Yohanna's first input.
 `;
 
+  // If a browser or web crawler specifically requests HTML (e.g. Gemini Web Browser bot)
+  if (acceptHeader.includes("text/html") && format !== "text") {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>System Instruction Directive for Gemini - Nova Robot Bridge</title>
+  <meta name="description" content="System instruction directive, personality persona, and HTTP action trigger protocol for Gemini Live and Nova Robot.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { background: #0b0f14; color: #d1d5db; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; padding: 24px; font-size: 13px; line-height: 1.5; max-width: 900px; margin: 0 auto; }
+    pre { white-space: pre-wrap; word-break: break-word; color: #38bdf8; }
+    a { color: #06b6d4; }
+  </style>
+</head>
+<body>
+  <main>
+    <pre>${promptText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+  </main>
+</body>
+</html>`;
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  }
+
+  // Default: Plain text
   return new NextResponse(promptText, {
     status: 200,
     headers: {
