@@ -36,6 +36,22 @@ export default function Home() {
   const [codeSaving, setCodeSaving] = useState(false);
   const [codeFeedback, setCodeFeedback] = useState(null);
 
+  // Edit Personality & Context state
+  const [showEditBio, setShowEditBio] = useState(false);
+  const [editBioSaving, setEditBioSaving] = useState(false);
+  const [editBioFeedback, setEditBioFeedback] = useState(null);
+  const [bioForm, setBioForm] = useState({
+    name: "Nova",
+    role: "",
+    tone: "",
+    embodiment: "",
+    speech_rules: "",
+    active_user: "Yohanna",
+    current_location: "Robotics Workshop",
+    active_mode: "Voice Interactive & Physical Gesture Teleoperation",
+    current_activity: "Ready for live dialogue and physical movement execution",
+  });
+
   // Fetch full DB data
   const fetchDb = async () => {
     try {
@@ -44,6 +60,23 @@ export default function Home() {
         const data = await res.json();
         setDbData(data);
         setLastUpdated(new Date().toLocaleTimeString());
+
+        // Update edit form defaults if not already editing
+        if (data.bio_data) {
+          const p = data.bio_data.personality || {};
+          const c = data.bio_data.context_values || {};
+          setBioForm({
+            name: p.name || "Nova",
+            role: p.role || "",
+            tone: p.tone || "",
+            embodiment: p.embodiment || "",
+            speech_rules: p.speech_rules || "",
+            active_user: c.active_user || "Yohanna",
+            current_location: c.current_location || "",
+            active_mode: c.active_mode || "",
+            current_activity: c.current_activity || "",
+          });
+        }
       }
     } catch (e) {
       console.error("Failed to fetch database:", e);
@@ -169,6 +202,56 @@ export default function Home() {
     }
   };
 
+  // Save Personality & Context Form
+  const handleSavePersonalityAndContext = async (e) => {
+    e?.preventDefault();
+    setEditBioSaving(true);
+    setEditBioFeedback(null);
+
+    const payload = {
+      personality: {
+        name: bioForm.name.trim(),
+        role: bioForm.role.trim(),
+        tone: bioForm.tone.trim(),
+        embodiment: bioForm.embodiment.trim(),
+        speech_rules: bioForm.speech_rules.trim(),
+      },
+      context_values: {
+        active_user: bioForm.active_user.trim(),
+        creator: "Yohanna",
+        current_location: bioForm.current_location.trim(),
+        active_mode: bioForm.active_mode.trim(),
+        system_status: "operational",
+        current_activity: bioForm.current_activity.trim(),
+        notes: "Updated from web interface",
+      },
+    };
+
+    try {
+      const res = await fetch("/api/bio_data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditBioFeedback("✓ Personality & Context updated successfully!");
+        setTimeout(() => {
+          setShowEditBio(false);
+          setEditBioFeedback(null);
+        }, 1200);
+        await fetchDb();
+        await fetchPromptText();
+      } else {
+        setEditBioFeedback(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setEditBioFeedback(`Error: ${err.message}`);
+    } finally {
+      setEditBioSaving(false);
+    }
+  };
+
   // Copy Gemini Prompt
   const handleCopyPrompt = async () => {
     let txt = geminiPromptText;
@@ -241,8 +324,13 @@ export default function Home() {
               color: dbData?.firebase_connected ? "var(--accent-green)" : "var(--accent-amber)",
               border: `1px solid ${dbData?.firebase_connected ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
             }}
+            title={
+              dbData?.firebase_connected
+                ? "Connected directly to Google Firebase Realtime Database. All writes are permanently persistent in the cloud."
+                : "Currently in In-Memory Serverless Cache. Set FIREBASE_DATABASE_URL in Vercel for 100% permanent cloud persistence."
+            }
           >
-            ● {dbData?.firebase_connected ? "Google RealtimeDB: CONNECTED" : "DB Mode: LOCAL CACHE"}
+            ● {dbData?.firebase_connected ? "STORAGE: GOOGLE REALTIMEDB (PERSISTENT)" : "STORAGE: SERVERLESS CACHE"}
           </span>
 
           <button
@@ -738,7 +826,22 @@ export default function Home() {
                 </p>
               </div>
 
-              <div style={{ display: "flex", gap: "8px" }}>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setShowEditBio(!showEditBio)}
+                  style={{
+                    background: showEditBio ? "#1e293b" : "#0284c7",
+                    color: "#fff",
+                    border: "none",
+                    padding: "4px 10px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
+                >
+                  {showEditBio ? "Close Edit" : "✎ Edit Personality & Context"}
+                </button>
+
                 <button
                   onClick={() => setShowAddCode(!showAddCode)}
                   style={{
@@ -769,6 +872,188 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            {/* EDIT PERSONALITY & CONTEXT FORM DRAWER */}
+            {showEditBio && (
+              <form
+                onSubmit={handleSavePersonalityAndContext}
+                style={{
+                  background: "#080c10",
+                  border: "1px solid #0284c7",
+                  borderRadius: "6px",
+                  padding: "16px",
+                  marginBottom: "20px",
+                }}
+              >
+                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "12px" }}>
+                  [EDIT ROBOT PERSONALITY & CONTEXT VALUES]
+                </h3>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: "14px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  {/* Left Column: Personality */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--accent-amber)", fontWeight: "600" }}>
+                      Personality Settings:
+                    </span>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Robot Name:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.name}
+                        onChange={(e) => setBioForm({ ...bioForm, name: e.target.value })}
+                        style={{ width: "100%" }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Role:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.role}
+                        onChange={(e) => setBioForm({ ...bioForm, role: e.target.value })}
+                        style={{ width: "100%" }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Tone:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.tone}
+                        onChange={(e) => setBioForm({ ...bioForm, tone: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Embodiment Description:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.embodiment}
+                        onChange={(e) => setBioForm({ ...bioForm, embodiment: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Speech Rules (e.g. short sentences):
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.speech_rules}
+                        onChange={(e) => setBioForm({ ...bioForm, speech_rules: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Right Column: Context Values */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--accent-amber)", fontWeight: "600" }}>
+                      Context Values:
+                    </span>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Active User:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.active_user}
+                        onChange={(e) => setBioForm({ ...bioForm, active_user: e.target.value })}
+                        style={{ width: "100%" }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Current Location:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.current_location}
+                        onChange={(e) => setBioForm({ ...bioForm, current_location: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Active Operational Mode:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.active_mode}
+                        onChange={(e) => setBioForm({ ...bioForm, active_mode: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
+                        Current Activity / Status Note:
+                      </label>
+                      <input
+                        type="text"
+                        value={bioForm.current_activity}
+                        onChange={(e) => setBioForm({ ...bioForm, current_activity: e.target.value })}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    type="submit"
+                    disabled={editBioSaving}
+                    style={{
+                      background: "var(--accent-cyan)",
+                      color: "#000",
+                      fontWeight: "700",
+                      border: "none",
+                      padding: "7px 16px",
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {editBioSaving ? "Saving..." : "Save Personality & Context"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEditBio(false)}
+                    style={{
+                      background: "#1e293b",
+                      color: "#94a3b8",
+                      border: "1px solid #334155",
+                      padding: "7px 14px",
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  {editBioFeedback && (
+                    <span style={{ fontSize: "12px", color: "var(--accent-green)", marginLeft: "8px" }}>
+                      {editBioFeedback}
+                    </span>
+                  )}
+                </div>
+              </form>
+            )}
 
             {/* ADD CODE FORM MODAL / DRAWER */}
             {showAddCode && (
@@ -901,11 +1186,27 @@ export default function Home() {
                   border: "1px solid #1a2230",
                   borderRadius: "4px",
                   padding: "14px",
+                  position: "relative",
                 }}
               >
-                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "8px" }}>
-                  [PERSONALITY & PERSONA]
-                </h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)" }}>
+                    [PERSONALITY & PERSONA]
+                  </h3>
+                  <button
+                    onClick={() => setShowEditBio(true)}
+                    style={{
+                      background: "transparent",
+                      color: "#38bdf8",
+                      border: "none",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px" }}>
                   <div>
                     <span style={{ color: "var(--text-dim)" }}>Name: </span>
@@ -937,11 +1238,27 @@ export default function Home() {
                   border: "1px solid #1a2230",
                   borderRadius: "4px",
                   padding: "14px",
+                  position: "relative",
                 }}
               >
-                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "8px" }}>
-                  [CONTEXT VALUES]
-                </h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)" }}>
+                    [CONTEXT VALUES]
+                  </h3>
+                  <button
+                    onClick={() => setShowEditBio(true)}
+                    style={{
+                      background: "transparent",
+                      color: "#38bdf8",
+                      border: "none",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px" }}>
                   <div>
                     <span style={{ color: "var(--text-dim)" }}>Active User: </span>

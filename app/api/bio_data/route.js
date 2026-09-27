@@ -71,16 +71,44 @@ export async function GET(request) {
 /**
  * POST /api/bio_data
  * Flexible update handler:
+ * - { action: "update_personality", personality: { ... } }
+ * - { action: "update_context", context_values: { ... } }
  * - { action: "add_code", code: { code, meaning, ... } }
  * - { action: "delete_code", code: "CODE_NAME" }
- * - { codes: [...] }
- * - Full bio_data object
+ * - Partial or full bio_data object
  */
 export async function POST(request) {
   try {
     const body = await request.json();
     const currentBio = await getBioData();
 
+    // 1. Update Personality
+    if (body.action === "update_personality" || body.personality) {
+      currentBio.personality = {
+        ...currentBio.personality,
+        ...(body.personality || {}),
+      };
+      await setBioData(currentBio);
+      return NextResponse.json(
+        { success: true, message: "Personality updated successfully.", bio_data: currentBio },
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
+    // 2. Update Context Values
+    if (body.action === "update_context" || body.context_values) {
+      currentBio.context_values = {
+        ...currentBio.context_values,
+        ...(body.context_values || {}),
+      };
+      await setBioData(currentBio);
+      return NextResponse.json(
+        { success: true, message: "Context values updated successfully.", bio_data: currentBio },
+        { status: 200, headers: CORS_HEADERS }
+      );
+    }
+
+    // 3. Add or update single code
     if (body.action === "add_code" && body.code) {
       const newEntry = {
         code: (body.code.code || "").toUpperCase().trim(),
@@ -95,7 +123,6 @@ export async function POST(request) {
       }
 
       let codes = Array.isArray(currentBio.codes) ? [...currentBio.codes] : [];
-      // Replace existing code if it exists, otherwise append
       const existingIdx = codes.findIndex((c) => c.code === newEntry.code);
       if (existingIdx >= 0) {
         codes[existingIdx] = newEntry;
@@ -114,6 +141,7 @@ export async function POST(request) {
       );
     }
 
+    // 4. Delete single code
     if (body.action === "delete_code" && body.code) {
       const codeToDelete = (body.code || "").toUpperCase().trim();
       let codes = Array.isArray(currentBio.codes) ? currentBio.codes : [];
@@ -130,6 +158,7 @@ export async function POST(request) {
       );
     }
 
+    // 5. Update full codes array
     if (Array.isArray(body.codes)) {
       currentBio.codes = body.codes;
       if (currentBio.gemini_instructions) {
@@ -142,8 +171,12 @@ export async function POST(request) {
       );
     }
 
-    // Default: overwrite entire object
-    const result = await setBioData(body);
+    // 6. Overwrite entire bio_data
+    const mergedBio = {
+      ...currentBio,
+      ...body,
+    };
+    const result = await setBioData(mergedBio);
     return NextResponse.json(
       { success: true, message: "bio_data updated successfully", bio_data: result },
       { status: 200, headers: CORS_HEADERS }
