@@ -70,45 +70,37 @@ export async function GET(request) {
 
 /**
  * POST /api/bio_data
- * Flexible update handler:
- * - { action: "update_personality", personality: { ... } }
- * - { action: "update_context", context_values: { ... } }
- * - { action: "add_code", code: { code, meaning, ... } }
- * - { action: "delete_code", code: "CODE_NAME" }
- * - Partial or full bio_data object
+ * Flexible update handler supporting atomic or combined updates:
+ * - { personality: { ... }, context_values: { ... } }
+ * - { action: "add_code", code: { ... } }
+ * - { action: "delete_code", code: "..." }
+ * - { codes: [...] }
  */
 export async function POST(request) {
   try {
     const body = await request.json();
     const currentBio = await getBioData();
+    let modified = false;
 
-    // 1. Update Personality
-    if (body.action === "update_personality" || body.personality) {
+    // 1. Merge Personality
+    if (body.personality) {
       currentBio.personality = {
         ...currentBio.personality,
-        ...(body.personality || {}),
+        ...body.personality,
       };
-      await setBioData(currentBio);
-      return NextResponse.json(
-        { success: true, message: "Personality updated successfully.", bio_data: currentBio },
-        { status: 200, headers: CORS_HEADERS }
-      );
+      modified = true;
     }
 
-    // 2. Update Context Values
-    if (body.action === "update_context" || body.context_values) {
+    // 2. Merge Context Values
+    if (body.context_values) {
       currentBio.context_values = {
         ...currentBio.context_values,
-        ...(body.context_values || {}),
+        ...body.context_values,
       };
-      await setBioData(currentBio);
-      return NextResponse.json(
-        { success: true, message: "Context values updated successfully.", bio_data: currentBio },
-        { status: 200, headers: CORS_HEADERS }
-      );
+      modified = true;
     }
 
-    // 3. Add or update single code
+    // 3. Add / Update Code
     if (body.action === "add_code" && body.code) {
       const newEntry = {
         code: (body.code.code || "").toUpperCase().trim(),
@@ -133,15 +125,10 @@ export async function POST(request) {
       if (currentBio.gemini_instructions) {
         currentBio.gemini_instructions.allowed_codes = codes.map((c) => c.code);
       }
-
-      await setBioData(currentBio);
-      return NextResponse.json(
-        { success: true, message: `Code '${newEntry.code}' saved.`, bio_data: currentBio },
-        { status: 200, headers: CORS_HEADERS }
-      );
+      modified = true;
     }
 
-    // 4. Delete single code
+    // 4. Delete Code
     if (body.action === "delete_code" && body.code) {
       const codeToDelete = (body.code || "").toUpperCase().trim();
       let codes = Array.isArray(currentBio.codes) ? currentBio.codes : [];
@@ -150,35 +137,32 @@ export async function POST(request) {
       if (currentBio.gemini_instructions) {
         currentBio.gemini_instructions.allowed_codes = codes.map((c) => c.code);
       }
-
-      await setBioData(currentBio);
-      return NextResponse.json(
-        { success: true, message: `Code '${codeToDelete}' removed.`, bio_data: currentBio },
-        { status: 200, headers: CORS_HEADERS }
-      );
+      modified = true;
     }
 
-    // 5. Update full codes array
+    // 5. Update Codes Array
     if (Array.isArray(body.codes)) {
       currentBio.codes = body.codes;
       if (currentBio.gemini_instructions) {
         currentBio.gemini_instructions.allowed_codes = body.codes.map((c) => c.code);
       }
-      await setBioData(currentBio);
-      return NextResponse.json(
-        { success: true, message: "Codes list updated.", bio_data: currentBio },
-        { status: 200, headers: CORS_HEADERS }
-      );
+      modified = true;
     }
 
-    // 6. Overwrite entire bio_data
-    const mergedBio = {
-      ...currentBio,
-      ...body,
-    };
-    const result = await setBioData(mergedBio);
+    // If nothing specific matched, merge top-level properties
+    if (!modified) {
+      Object.assign(currentBio, body);
+    }
+
+    // Save to Google Realtime DB and local cache
+    const saved = await setBioData(currentBio);
+
     return NextResponse.json(
-      { success: true, message: "bio_data updated successfully", bio_data: result },
+      {
+        success: true,
+        message: "bio_data updated successfully.",
+        bio_data: saved,
+      },
       { status: 200, headers: CORS_HEADERS }
     );
   } catch (err) {

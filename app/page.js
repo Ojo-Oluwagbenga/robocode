@@ -52,7 +52,7 @@ export default function Home() {
     current_activity: "Ready for live dialogue and physical movement execution",
   });
 
-  // Fetch full DB data
+  // Fetch full DB data - NEVER touches form states so editing is never interrupted
   const fetchDb = async () => {
     try {
       const res = await fetch("/api/db", { cache: "no-store" });
@@ -60,29 +60,31 @@ export default function Home() {
         const data = await res.json();
         setDbData(data);
         setLastUpdated(new Date().toLocaleTimeString());
-
-        // Update edit form defaults if not already editing
-        if (data.bio_data) {
-          const p = data.bio_data.personality || {};
-          const c = data.bio_data.context_values || {};
-          setBioForm({
-            name: p.name || "Nova",
-            role: p.role || "",
-            tone: p.tone || "",
-            embodiment: p.embodiment || "",
-            speech_rules: p.speech_rules || "",
-            active_user: c.active_user || "Yohanna",
-            current_location: c.current_location || "",
-            active_mode: c.active_mode || "",
-            current_activity: c.current_activity || "",
-          });
-        }
       }
     } catch (e) {
       console.error("Failed to fetch database:", e);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Open Edit Bio form prefilled with current live values
+  const openEditBio = () => {
+    const p = dbData?.bio_data?.personality || {};
+    const c = dbData?.bio_data?.context_values || {};
+    setBioForm({
+      name: p.name || "Nova",
+      role: p.role || "",
+      tone: p.tone || "",
+      embodiment: p.embodiment || "",
+      speech_rules: p.speech_rules || "",
+      active_user: c.active_user || "Yohanna",
+      current_location: c.current_location || "",
+      active_mode: c.active_mode || "",
+      current_activity: c.current_activity || "",
+    });
+    setEditBioFeedback(null);
+    setShowEditBio(true);
   };
 
   // Fetch gemini prompt text
@@ -103,14 +105,14 @@ export default function Home() {
     fetchPromptText();
   }, []);
 
-  // Auto-refresh interval
+  // Auto-refresh interval - pauses when forms are open so typing is never disturbed
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || showEditBio || showAddCode) return;
     const interval = setInterval(() => {
       fetchDb();
-    }, 2000);
+    }, 2500);
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, showEditBio, showAddCode]);
 
   // Test sending a GET request just like Gemini would
   const handleSendTestGet = async (e) => {
@@ -235,11 +237,22 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.success) {
-        setEditBioFeedback("✓ Personality & Context updated successfully!");
+        setEditBioFeedback("✓ Personality & Context updated successfully in Google Realtime DB!");
+        // Update local state immediately for instant feedback
+        setDbData((prev) => ({
+          ...prev,
+          bio_data: data.bio_data || {
+            ...prev.bio_data,
+            personality: payload.personality,
+            context_values: payload.context_values,
+          },
+        }));
+
         setTimeout(() => {
           setShowEditBio(false);
           setEditBioFeedback(null);
         }, 1200);
+
         await fetchDb();
         await fetchPromptText();
       } else {
@@ -324,11 +337,6 @@ export default function Home() {
               color: dbData?.firebase_connected ? "var(--accent-green)" : "var(--accent-amber)",
               border: `1px solid ${dbData?.firebase_connected ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
             }}
-            title={
-              dbData?.firebase_connected
-                ? "Connected directly to Google Firebase Realtime Database. All writes are permanently persistent in the cloud."
-                : "Currently in In-Memory Serverless Cache. Set FIREBASE_DATABASE_URL in Vercel for 100% permanent cloud persistence."
-            }
           >
             ● {dbData?.firebase_connected ? "STORAGE: GOOGLE REALTIMEDB (PERSISTENT)" : "STORAGE: SERVERLESS CACHE"}
           </span>
@@ -344,7 +352,7 @@ export default function Home() {
               fontSize: "11px",
             }}
           >
-            {autoRefresh ? "Auto-Sync: ON (2s)" : "Auto-Sync: PAUSED"}
+            {autoRefresh ? "Auto-Sync: ON (2.5s)" : "Auto-Sync: PAUSED"}
           </button>
 
           <button
@@ -828,12 +836,18 @@ export default function Home() {
 
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button
-                  onClick={() => setShowEditBio(!showEditBio)}
+                  onClick={() => {
+                    if (showEditBio) {
+                      setShowEditBio(false);
+                    } else {
+                      openEditBio();
+                    }
+                  }}
                   style={{
                     background: showEditBio ? "#1e293b" : "#0284c7",
                     color: "#fff",
                     border: "none",
-                    padding: "4px 10px",
+                    padding: "5px 12px",
                     borderRadius: "4px",
                     fontSize: "11px",
                     fontWeight: "600",
@@ -848,7 +862,7 @@ export default function Home() {
                     background: showAddCode ? "#1e293b" : "#064e3b",
                     color: showAddCode ? "#94a3b8" : "#6ee7b7",
                     border: "1px solid var(--border-color)",
-                    padding: "4px 10px",
+                    padding: "5px 12px",
                     borderRadius: "4px",
                     fontSize: "11px",
                     fontWeight: "600",
@@ -863,7 +877,7 @@ export default function Home() {
                     background: "#1f2937",
                     color: "#e5e7eb",
                     border: "1px solid var(--border-color)",
-                    padding: "4px 8px",
+                    padding: "5px 10px",
                     borderRadius: "4px",
                     fontSize: "11px",
                   }}
@@ -885,9 +899,14 @@ export default function Home() {
                   marginBottom: "20px",
                 }}
               >
-                <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)", marginBottom: "12px" }}>
-                  [EDIT ROBOT PERSONALITY & CONTEXT VALUES]
-                </h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ fontSize: "12px", color: "var(--accent-cyan)" }}>
+                    [EDIT ROBOT PERSONALITY & CONTEXT VALUES]
+                  </h3>
+                  <span style={{ fontSize: "11px", color: "var(--accent-amber)" }}>
+                    Auto-refresh paused while editing
+                  </span>
+                </div>
 
                 <div
                   style={{
@@ -918,11 +937,20 @@ export default function Home() {
                       <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
                         Role:
                       </label>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={bioForm.role}
                         onChange={(e) => setBioForm({ ...bioForm, role: e.target.value })}
-                        style={{ width: "100%" }}
+                        style={{
+                          width: "100%",
+                          fontFamily: "inherit",
+                          background: "#0d1117",
+                          color: "#fff",
+                          border: "1px solid var(--border-color)",
+                          borderRadius: "4px",
+                          padding: "6px 10px",
+                          fontSize: "12px",
+                        }}
                         required
                       />
                     </div>
@@ -941,22 +969,40 @@ export default function Home() {
                       <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
                         Embodiment Description:
                       </label>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={bioForm.embodiment}
                         onChange={(e) => setBioForm({ ...bioForm, embodiment: e.target.value })}
-                        style={{ width: "100%" }}
+                        style={{
+                          width: "100%",
+                          fontFamily: "inherit",
+                          background: "#0d1117",
+                          color: "#fff",
+                          border: "1px solid var(--border-color)",
+                          borderRadius: "4px",
+                          padding: "6px 10px",
+                          fontSize: "12px",
+                        }}
                       />
                     </div>
                     <div>
                       <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
                         Speech Rules (e.g. short sentences):
                       </label>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
                         value={bioForm.speech_rules}
                         onChange={(e) => setBioForm({ ...bioForm, speech_rules: e.target.value })}
-                        style={{ width: "100%" }}
+                        style={{
+                          width: "100%",
+                          fontFamily: "inherit",
+                          background: "#0d1117",
+                          color: "#fff",
+                          border: "1px solid var(--border-color)",
+                          borderRadius: "4px",
+                          padding: "6px 10px",
+                          fontSize: "12px",
+                        }}
                       />
                     </div>
                   </div>
@@ -1004,11 +1050,20 @@ export default function Home() {
                       <label style={{ display: "block", color: "var(--text-dim)", fontSize: "11px", marginBottom: "3px" }}>
                         Current Activity / Status Note:
                       </label>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={3}
                         value={bioForm.current_activity}
                         onChange={(e) => setBioForm({ ...bioForm, current_activity: e.target.value })}
-                        style={{ width: "100%" }}
+                        style={{
+                          width: "100%",
+                          fontFamily: "inherit",
+                          background: "#0d1117",
+                          color: "#fff",
+                          border: "1px solid var(--border-color)",
+                          borderRadius: "4px",
+                          padding: "6px 10px",
+                          fontSize: "12px",
+                        }}
                       />
                     </div>
                   </div>
@@ -1028,7 +1083,7 @@ export default function Home() {
                       fontSize: "12px",
                     }}
                   >
-                    {editBioSaving ? "Saving..." : "Save Personality & Context"}
+                    {editBioSaving ? "Saving to Database..." : "Save Personality & Context"}
                   </button>
 
                   <button
@@ -1194,7 +1249,7 @@ export default function Home() {
                     [PERSONALITY & PERSONA]
                   </h3>
                   <button
-                    onClick={() => setShowEditBio(true)}
+                    onClick={openEditBio}
                     style={{
                       background: "transparent",
                       color: "#38bdf8",
@@ -1246,7 +1301,7 @@ export default function Home() {
                     [CONTEXT VALUES]
                   </h3>
                   <button
-                    onClick={() => setShowEditBio(true)}
+                    onClick={openEditBio}
                     style={{
                       background: "transparent",
                       color: "#38bdf8",
